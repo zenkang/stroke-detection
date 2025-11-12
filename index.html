@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FASTAI-d Stroke Detection System</title>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@1.3.1/dist/tf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@latest/dist/teachablemachine-image.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@teachablemachine/pose@0.8/dist/teachablemachine-pose.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/speech-commands@0.4.0/dist/speech-commands.min.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;background:linear-gradient(135deg,#7A0000 0%,#3d0000 100%);min-height:100vh;display:flex;justify-content:center;align-items:center;padding:20px}
+.container{background:white;border-radius:20px;box-shadow:0 20px 60px rgba(0,0,0,0.3);max-width:700px;width:100%;padding:40px;text-align:center}
+h1{color:#e74c3c;font-size:2.5em;margin-bottom:10px}
+.subtitle{color:#555;font-size:1.1em}
+.hidden{display:none}
+.btn{background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);color:white;border:none;padding:15px 40px;font-size:1.2em;border-radius:50px;cursor:pointer;transition:transform .2s;margin:10px}
+.btn:hover{transform:scale(1.05)}
+.phase-progress{display:flex;justify-content:space-around;margin:20px 0;padding:20px;background:#f5f5f5;border-radius:10px;flex-wrap:wrap}
+.phase-item{text-align:center;padding:10px;flex:1;min-width:100px}
+.phase-item.active{background:#667eea;color:white;border-radius:8px}
+.phase-item.completed{background:#27ae60;color:white;border-radius:8px}
+.instructions{background:#e3f2fd;border-radius:10px;padding:20px;margin:20px 0;font-size:1.2em;color:#1565c0;font-weight:bold;min-height:100px;display:flex;align-items:center;justify-content:center;text-align:center}
+.countdown{font-size:5em;font-weight:bold;color:#667eea;margin:20px 0;animation:countdown-pulse 1s infinite}
+@keyframes countdown-pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.1)}}
+.countdown.capturing{color:#27ae60;animation:none}
+#webcam-container{margin:20px auto;display:flex;justify-content:center;position:relative}
+#webcam-container canvas{border:3px solid #667eea;border-radius:10px;max-width:100%}
+.prediction-result{background:white;padding:10px;border-radius:8px;margin:10px 0;border-left:4px solid #667eea;text-align:left}
+.score-display{font-size:3em;font-weight:bold;margin:20px 0}
+.score-high{color:#e74c3c}.score-medium{color:#f39c12}.score-low{color:#27ae60}
+.calling-ambulance{background:#e74c3c;color:white;padding:30px;border-radius:10px;margin:20px 0;animation:pulse 1s infinite}
+@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.05)}}
+
+.emergency-call-section {
+    background: #fee2e2;
+    border: 3px solid #dc2626;
+    border-radius: 10px;
+    padding: 25px;
+    margin: 20px 0;
+    animation: emergency-pulse 1.5s infinite;
+}
+
+@keyframes emergency-pulse {
+    0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.7); }
+    50% { transform: scale(1.02); box-shadow: 0 0 0 10px rgba(220, 38, 38, 0); }
+}
+
+.emergency-call-btn {
+    background: #dc2626;
+    color: white;
+    border: none;
+    padding: 20px 50px;
+    font-size: 1.5em;
+    border-radius: 50px;
+    cursor: pointer;
+    font-weight: bold;
+    transition: all 0.3s;
+    margin: 15px 0;
+}
+
+.emergency-call-btn:hover {
+    background: #b91c1c;
+    transform: scale(1.05);
+}
+
+.calling-status {
+    background: #dc2626;
+    color: white;
+    padding: 30px;
+    border-radius: 10px;
+    margin: 20px 0;
+    font-size: 1.3em;
+}
+
+.instructions-list {
+    background: #fef3c7;
+    border-left: 4px solid #f59e0b;
+    padding: 20px;
+    border-radius: 8px;
+    margin: 20px 0;
+    text-align: left;
+}
+
+.instructions-list h3 {
+    color: #92400e;
+    margin-bottom: 15px;
+    font-size: 1.3em;
+}
+
+.instructions-list li {
+    margin: 10px 0;
+    line-height: 1.6;
+    font-size: 1.1em;
+}
+
+.time-display {
+    background: #dbeafe;
+    border: 2px solid #3b82f6;
+    padding: 15px;
+    border-radius: 8px;
+    margin: 15px 0;
+    font-size: 1.2em;
+    font-weight: bold;
+}
+
+.moderate-risk-section {
+    background: #fef3c7;
+    border: 2px solid #f59e0b;
+    border-radius: 10px;
+    padding: 20px;
+    margin: 20px 0;
+}
+
+.moderate-risk-section h3 {
+    color: #92400e;
+    margin-bottom: 10px;
+}
+</style>
+</head>
+<body>
+<div class="container">
+<div class="header">
+<img src="./logo.png" alt="FASTAI-d Logo" style="width:120px;height:120px;margin-bottom:15px">
+<h1>FASTAI-d Stroke Detection</h1>
+<p class="subtitle">AI-Powered Emergency Stroke Assessment</p>
+</div>
+
+<div id="start-screen">
+<div style="background:#f8d7da;border:2px solid #dc3545;border-radius:10px;padding:15px;margin:20px 0;color:#721c24;font-weight:bold">
+⚠️ This is a simulated emergency assessment. If your stroke risk ≥ 80%, please call 995.
+</div>
+<p style="color:#555;margin:20px 0">
+Each test lasts 8 seconds. Keep yourself visible to the camera during countdowns.
+</p>
+<button class="btn" onclick="startAssessment()">Begin Assessment</button>
+</div>
+
+<div id="test-screen" class="hidden">
+<div class="phase-progress">
+<div class="phase-item" id="phase-1"><div>😊</div><div>Face</div></div>
+<div class="phase-item" id="phase-2"><div>💪</div><div>Arms</div></div>
+<div class="phase-item" id="phase-3"><div>🧍</div><div>Balance</div></div>
+<div class="phase-item" id="phase-4"><div>🗣</div><div>Speech</div></div>
+</div>
+<div class="instructions" id="instructions">Preparing camera...</div>
+<div class="countdown" id="countdown"></div>
+<div id="webcam-container"></div>
+<div id="label-container"></div>
+<p style="margin-top:20px;color:#666"><strong>Current Phase:</strong> <span id="phase-indicator">Initializing...</span></p>
+</div>
+
+<div id="results-screen" class="hidden">
+<h2>Assessment Complete</h2>
+<div class="score-display" id="final-score"></div>
+<p style="color:#666;margin-top:-10px">Overall Stroke Risk</p>
+<div id="detailed-results"></div>
+<div id="ambulance-status"></div>
+<button class="btn" onclick="location.reload()">Start New Assessment</button>
+</div>
+</div>
+
+<script>
+const ARM_MODEL_URL="https://teachablemachine.withgoogle.com/models/Kjh24LdD9/";
+const BALANCE_MODEL_URL="https://teachablemachine.withgoogle.com/models/ePF4iXslU/";
+const SPEECH_MODEL_URL="https://teachablemachine.withgoogle.com/models/y6HuxR6sD/";
+const COUNTDOWN_SECONDS=8;
+const EMERGENCY_THRESHOLD=0.8;
+let webcam,ctx,currentModel,pose,webcamInterval;
+let globalWebcam;
+let symptomScores={face:0,arm:0,balance:0,speech:0};
+let speechRecognizer = null;
+let isListening = false;
+
+// Utility functions
+function updatePhaseIndicator(p){
+ for(let i=1;i<=4;i++){
+  const e=document.getElementById(`phase-${i}`);
+  e.classList.remove('active','completed');
+  if(i<p)e.classList.add('completed');
+  else if(i===p)e.classList.add('active');
+ }
+}
+
+async function showCountdown(webcamInstance,drawPose=false){
+ const el=document.getElementById('countdown');
+ if(webcamInstance){
+  if(drawPose){
+    webcamInterval=setInterval(async()=>{
+      await webcamInstance.update();
+      const {pose:poseNow,posenetOutput}=await currentModel.estimatePose(webcamInstance.canvas);
+      ctx.drawImage(webcamInstance.canvas,0,0);
+      if(poseNow){
+        tmPose.drawKeypoints(poseNow.keypoints,0.5,ctx);
+        tmPose.drawSkeleton(poseNow.keypoints,0.5,ctx);
+      }
+    },100);
+  }else{
+    webcamInterval=setInterval(()=>webcamInstance.update(),100);
+  }
+ }
+ for(let i=COUNTDOWN_SECONDS;i>0;i--){
+  el.textContent=i;el.classList.remove('capturing');
+  await new Promise(r=>setTimeout(r,1000));
+ }
+ clearInterval(webcamInterval);
+ el.textContent='📸';el.classList.add('capturing');
+ await new Promise(r=>setTimeout(r,500));
+ el.textContent='';
+}
+
+function displayPrediction(pred,name){
+ const c=document.getElementById('label-container');
+ c.innerHTML=`<div class="prediction-result"><strong>${name} Result:</strong></div>`;
+ if(Array.isArray(pred))pred.forEach(p=>{
+  const d=document.createElement('div');
+  d.className='prediction-result';
+  d.innerHTML=`${p.className}: <strong>${(p.probability*100).toFixed(1)}%</strong>`;
+  c.appendChild(d);
+ });
+}
+
+async function initializeWebcam() {
+    if (!globalWebcam) {
+        globalWebcam = new tmImage.Webcam(400, 400, true);
+        await globalWebcam.setup();
+        await globalWebcam.play();
+    }
+    return globalWebcam;
+}
+
+async function setupPoseWebcam() {
+    if (!globalWebcam) {
+        await initializeWebcam();
+    }
+    return {
+        canvas: globalWebcam.canvas,
+        play: async () => {},
+        setup: async () => {},
+        update: async () => globalWebcam.update(),
+        stop: () => {}
+    };
+}
+
+// ---- Main flow ----
+async function startAssessment(){
+ document.getElementById('start-screen').classList.add('hidden');
+ document.getElementById('test-screen').classList.remove('hidden');
+ await runFaceTest();
+}
+
+    // const BASE_URL = 'https://detect.roboflow.com';  // Roboflow hosted inference base URL
+    // const MODEL_ID = 'air-a2axo/stroke-2-0-lu7ua-instant-1';    // e.g. "face-droop-model/1"
+    // const API_KEY = 'rf_7FVsgM52mRVz9ikdsxMsTloYImB2';
+
+// ---- FACE TEST ----
+async function runFaceTest(){
+ updatePhaseIndicator(1);
+ document.getElementById('instructions').innerHTML='😊 FACE TEST<br>Smile widely and show your teeth.';
+ document.getElementById('phase-indicator').textContent='Face Drooping Test (1/4)';
+ webcam = await initializeWebcam();
+ const cont=document.getElementById('webcam-container');cont.innerHTML='';cont.appendChild(webcam.canvas);
+ await showCountdown(webcam);
+ webcam.update();
+ // Encode the canvas image to Base64 and send the raw base64 string as the request body
+ try {
+     // Get a data URL and strip the prefix to obtain the pure Base64 payload
+     const dataURL = webcam.canvas.toDataURL('image/jpeg', 0.95);
+     const base64 = dataURL.split(',')[1];
+
+     // Your Roboflow model endpoint parameters
+     const PROJECT_SLUG = 'stroke-2-0-lu7ua';
+     const VERSION = '2';
+     const API_KEY = 'ccODV5U8yxLQMgi9SYHC';
+
+     const url = `https://detect.roboflow.com/${PROJECT_SLUG}/${VERSION}?api_key=${encodeURIComponent(API_KEY)}`;
+
+     // Send the raw Base64 string in the POST body (matches: base64 YOUR_IMAGE.jpg | curl -d @- ...)
+     const response = await fetch(url, {
+         method: 'POST',
+         headers: {
+             'Content-Type': 'application/x-www-form-urlencoded'
+         },
+         body: base64
+     });
+
+     const result = await response.json();
+     const pred = result.predictions?.[0] || { class: '', confidence: 0 };
+     const isNoStroke = pred.class.toLowerCase().startsWith('no ');
+     console.log('prediction confidence is ', pred.confidence);
+     const prediction = isNoStroke ? 1 - pred.confidence : pred.confidence;
+
+     symptomScores.face = prediction;
+     displayPrediction([
+         { className: 'Face Drooping', probability: +(prediction).toFixed(2) }
+     ], 'Face');
+ } catch (err) {
+     console.error('Roboflow inference error:', err);
+ }
+
+
+ await new Promise(r=>setTimeout(r,2000));
+ await runArmTest();
+}
+
+// ---- ARM TEST ----
+async function runArmTest(){
+ updatePhaseIndicator(2);
+ document.getElementById('instructions').innerHTML='💪 ARM TEST<br>Raise both arms straight out, with your palms facing up.';
+ document.getElementById('phase-indicator').textContent='Arm Drift Test (2/4)';
+ currentModel=await tmPose.load(ARM_MODEL_URL+"model.json",ARM_MODEL_URL+"metadata.json");
+ webcam = await setupPoseWebcam();
+ const cont=document.getElementById('webcam-container');cont.innerHTML='';
+ const canvas=document.createElement('canvas');
+ canvas.width=400;canvas.height=400;canvas.style.border='3px solid #667eea';canvas.style.borderRadius='10px';
+ ctx=canvas.getContext('2d');cont.appendChild(canvas);
+ await showCountdown(webcam,true);
+ webcam.update();
+ const {pose,posenetOutput}=await currentModel.estimatePose(webcam.canvas);
+ const pred=await currentModel.predict(posenetOutput);
+ const weak=pred.find(p=>p.className.toLowerCase()==='arm drift');
+ symptomScores.arm=weak?weak.probability:0;
+ ctx.drawImage(webcam.canvas,0,0);
+ if(pose){tmPose.drawKeypoints(pose.keypoints,0.5,ctx);tmPose.drawSkeleton(pose.keypoints,0.5,ctx);}
+ displayPrediction(pred,'Arms');
+ await new Promise(r=>setTimeout(r,2000));
+ await runBalanceTest();
+}
+
+// ---- BALANCE TEST ----
+async function runBalanceTest(){
+ updatePhaseIndicator(3);
+ document.getElementById('instructions').innerHTML='🧍 BALANCE TEST<br>Sit or stand straight with your arms by your side.';
+ document.getElementById('phase-indicator').textContent='Balance Test (3/4)';
+ currentModel=await tmPose.load(BALANCE_MODEL_URL+"model.json",BALANCE_MODEL_URL+"metadata.json");
+ webcam = await setupPoseWebcam();
+ const cont=document.getElementById('webcam-container');cont.innerHTML='';
+ const canvas=document.createElement('canvas');
+ canvas.width=400;canvas.height=400;canvas.style.border='3px solid #667eea';canvas.style.borderRadius='10px';
+ ctx=canvas.getContext('2d');cont.appendChild(canvas);
+ await showCountdown(webcam,true);
+ webcam.update();
+ const {pose,posenetOutput}=await currentModel.estimatePose(webcam.canvas);
+ const pred=await currentModel.predict(posenetOutput);
+ const nb=pred.find(p=>p.className.toLowerCase()==='not balanced');
+ symptomScores.balance=nb?nb.probability:0;
+ ctx.drawImage(webcam.canvas,0,0);
+ if(pose){tmPose.drawKeypoints(pose.keypoints,0.5,ctx);tmPose.drawSkeleton(pose.keypoints,0.5,ctx);}
+ displayPrediction(pred,'Balance');
+ await new Promise(r=>setTimeout(r,2000));
+ await runSpeechTest();
+}
+
+// ---- SPEECH TEST (MANUAL START/STOP) ----
+async function runSpeechTest(){
+ updatePhaseIndicator(4);
+ document.getElementById('instructions').innerHTML=`
+    🗣 SPEECH TEST<br>
+    Say: "You can't teach an old dog new tricks"<br>
+    <button class="btn" id="startSpeechBtn" style="margin-top:20px;background:#27ae60" onclick="startListening()">Start Listening</button>
+    <button class="btn" id="stopSpeechBtn" style="margin-top:20px;background:#e74c3c;display:none" onclick="stopListening()">Stop & Complete</button>
+ `;
+ document.getElementById('phase-indicator').textContent='Speech Test (4/4)';
+ document.getElementById('webcam-container').innerHTML='<div style="padding:40px;background:#e8f5e9;border-radius:10px;border:2px solid #4caf50"><div style="font-size:3em">🎤</div><div id="speechStatus" style="font-size:1.5em;margin-top:10px">Ready to listen...</div></div>';
+ 
+ const URL = "https://teachablemachine.withgoogle.com/models/y6HuxR6sD/";
+ const checkpointURL = URL + "model.json";
+ const metadataURL = URL + "metadata.json";
+ 
+ try {
+    speechRecognizer = speechCommands.create("BROWSER_FFT", undefined, checkpointURL, metadataURL);
+    await speechRecognizer.ensureModelLoaded();
+ } catch (error) {
+    console.error('Speech recognition error:', error);
+    symptomScores.speech = 0;
+ }
+}
+
+function startListening() {
+    if (!speechRecognizer || isListening) return;
+    
+    isListening = true;
+    document.getElementById('startSpeechBtn').style.display = 'none';
+    document.getElementById('stopSpeechBtn').style.display = 'inline-block';
+    document.getElementById('speechStatus').textContent = 'Listening...';
+    document.getElementById('speechStatus').style.color = '#27ae60';
+    
+    const classLabels = speechRecognizer.wordLabels();
+    
+    speechRecognizer.listen(result => {
+        const scores = result.scores;
+        for (let i = 0; i < classLabels.length; i++) {
+            if (classLabels[i].toLowerCase() === "slurred speech") {
+                symptomScores.speech = Math.max(symptomScores.speech, result.scores[i]);
+            }
+        }
+    }, {
+        includeSpectrogram: true,
+        probabilityThreshold: 0.5,
+        invokeCallbackOnNoiseAndUnknown: true,
+        overlapFactor: 0.5
+    });
+}
+
+function stopListening() {
+    if (speechRecognizer && isListening) {
+        speechRecognizer.stopListening();
+        isListening = false;
+        document.getElementById('speechStatus').textContent = 'Processing...';
+        document.getElementById('speechStatus').style.color = '#667eea';
+        setTimeout(() => {
+            showResults();
+        }, 1000);
+    }
+}
+
+// ---- RESULTS ----
+function showResults(){
+ if (globalWebcam) {
+     globalWebcam.stop();
+ }
+ document.getElementById('test-screen').classList.add('hidden');
+ document.getElementById('results-screen').classList.remove('hidden');
+ 
+ const avg=(symptomScores.face+symptomScores.arm+symptomScores.balance+symptomScores.speech)/4;
+ const pct=(avg*100).toFixed(1);
+ const assessmentTime = new Date();
+ 
+ const scoreEl=document.getElementById('final-score');
+ scoreEl.textContent=pct+'%';
+ scoreEl.className='score-display '+(avg>=.8?'score-high':avg>=.5?'score-medium':'score-low');
+ 
+ const details=document.getElementById('detailed-results');
+ details.innerHTML=`
+ <div style="background:white;padding:15px;border-radius:8px;margin:10px 0;text-align:left">
+  <p><strong>Face drooping:</strong> ${(symptomScores.face*100).toFixed(1)}%</p>
+  <p><strong>Arm weakness:</strong> ${(symptomScores.arm*100).toFixed(1)}%</p>
+  <p><strong>Balance issue:</strong> ${(symptomScores.balance*100).toFixed(1)}%</p>
+  <p><strong>Speech slur:</strong> ${(symptomScores.speech*100).toFixed(1)}%</p>
+ </div>`;
+ 
+ const ambulanceStatus = document.getElementById('ambulance-status');
+ 
+ if (avg >= 0.8) {
+     // HIGH RISK - Emergency call required
+     ambulanceStatus.innerHTML = `
+         <div class="emergency-call-section">
+             <h2 style="color:#dc2626;margin-bottom:15px">⚠️ HIGH RISK DETECTED</h2>
+             <p style="font-size:1.2em;margin-bottom:20px">
+                 Your stroke risk is <strong>${pct}%</strong>. Immediate medical attention is required.
+             </p>
+             <button class="emergency-call-btn" onclick="call995()">
+                 📞 CALL 995 NOW
+             </button>
+             <p style="margin-top:10px;font-size:0.9em;color:#991b1b">
+                 Press the button above to call emergency services
+             </p>
+         </div>
+         <div class="time-display">
+             ⏰ Assessment completed at: ${assessmentTime.toLocaleTimeString('en-SG')}
+         </div>
+     `;
+ } else if (avg >= 0.6) {
+     // MODERATE RISK - Monitor and contact healthcare
+     ambulanceStatus.innerHTML = `
+         <div class="moderate-risk-section">
+             <h3>⚠️ MODERATE RISK DETECTED</h3>
+             <p style="margin:15px 0;font-size:1.1em">
+                 Your stroke risk is <strong>${pct}%</strong>.
+             </p>
+             <div style="background:white;padding:15px;border-radius:8px;margin:15px 0;text-align:left">
+                 <h4 style="margin-bottom:10px">Recommendations:</h4>
+                 <ul style="line-height:1.8">
+                     <li>Monitor your symptoms closely</li>
+                     <li>Contact your healthcare provider or GP immediately</li>
+                     <li>If symptoms worsen, call 995 without delay</li>
+                     <li>Do not drive yourself to the hospital</li>
+                     <li>Keep a record of when symptoms started</li>
+                 </ul>
+             </div>
+             <div class="time-display">
+                 ⏰ Assessment completed at: ${assessmentTime.toLocaleTimeString('en-SG')}
+             </div>
+         </div>
+     `;
+ } else {
+     // LOW RISK
+     ambulanceStatus.innerHTML = `
+         <div style="background:#d1fae5;border:2px solid #10b981;border-radius:10px;padding:20px;margin:20px 0">
+             <h3 style="color:#065f46">✓ Low Risk</h3>
+             <p style="margin:15px 0">
+                 No immediate stroke symptoms detected. However, if you experience sudden changes in symptoms, 
+                 seek medical attention immediately.
+             </p>
+         </div>
+     `;
+ }
+}
+
+// NEW FUNCTION - Call 995 emergency
+function call995() {
+    const assessmentTime = new Date().toLocaleTimeString('en-SG');
+    const ambulanceStatus = document.getElementById('ambulance-status');
+    
+    // Initiate the call
+    window.location.href = 'tel:995';
+    
+    // Display instructions
+    ambulanceStatus.innerHTML = `
+        <div class="calling-status">
+            <h2>📞 CALLING 995...</h2>
+            <p style="margin-top:10px">Emergency services are being contacted</p>
+        </div>
+        
+        <div class="instructions-list">
+            <h3>🚨 IMPORTANT INSTRUCTIONS</h3>
+            <ul>
+                <li><strong>Stay Calm:</strong> Take deep breaths. Help is on the way.</li>
+                <li><strong>Unlock Your Door:</strong> If possible, unlock your front door so EMTs can enter easily.</li>
+                <li><strong>Sit or Lie Down:</strong> Find a safe, comfortable position and stay still.</li>
+                <li><strong>Do Not Eat or Drink:</strong> Avoid consuming anything until EMTs arrive.</li>
+                <li><strong>Gather Medications:</strong> If you can, collect any medications you're currently taking.</li>
+                <li><strong>Note the Time:</strong> Tell the EMTs when your symptoms started (see below).</li>
+            </ul>
+        </div>
+        
+        <div class="time-display" style="background:#fee2e2;border-color:#dc2626">
+            ⏰ <strong>TELL THE EMTs:</strong><br>
+            Assessment completed at: <span style="font-size:1.4em">${assessmentTime}</span><br>
+            <span style="font-size:0.9em">Symptoms detected during this timeframe</span>
+        </div>
+        
+        <div style="background:#fef3c7;padding:15px;border-radius:8px;margin-top:20px">
+            <p style="font-size:1.1em;line-height:1.6">
+                <strong>What to tell the EMTs:</strong><br>
+                "I completed a stroke assessment at ${assessmentTime}. The AI detected a high stroke risk 
+                with symptoms including face drooping, arm weakness, balance issues, and/or speech difficulties."
+            </p>
+        </div>
+        
+        <div style="margin-top:30px;padding:20px;background:#e0e7ff;border-radius:8px">
+            <p style="font-size:1.1em">
+                🚑 <strong>Emergency services have been notified.</strong><br>
+                Stay on the line and follow their instructions.
+            </p>
+        </div>
+    `;
+}
+</script>
+</body>
+</html>
